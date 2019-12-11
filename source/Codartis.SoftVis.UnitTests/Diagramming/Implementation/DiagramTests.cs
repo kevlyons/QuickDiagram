@@ -1,321 +1,326 @@
-﻿//using System.Linq;
-//using Codartis.SoftVis.Diagramming;
-//using Codartis.SoftVis.Diagramming.Implementation;
-//using Codartis.SoftVis.Geometry;
-//using Codartis.SoftVis.UnitTests.TestSubjects;
-//using FluentAssertions;
-//using Xunit;
+﻿using System.Collections.Generic;
+using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
+using Codartis.SoftVis.Diagramming.Implementation;
+using Codartis.SoftVis.Geometry;
+using Codartis.SoftVis.Modeling.Definition;
+using Codartis.SoftVis.UnitTests.Modeling;
+using FluentAssertions;
+using JetBrains.Annotations;
+using System.Linq;
+using Xunit;
 
-//namespace Codartis.SoftVis.UnitTests.Diagramming.Implementation
-//{
-//    public class DiagramTests
-//    {
-//        private static readonly Route TestRoute = new Route(new Point2D(1,1),new Point2D(2,2));
+namespace Codartis.SoftVis.UnitTests.Diagramming.Implementation
+{
+    public class DiagramTests
+    {
+        private static readonly Route TestRoute = new Route((1, 1), (2, 2));
 
-//        [Fact]
-//        public void WithNode_RootLevel_Works()
-//        {
-//            var node = new TestDiagramNode();
-//            var diagram = Diagram.Empty.AddNode(node);
+        [NotNull] private readonly ModelBuilder _modelBuilder;
 
-//            diagram.Nodes.ShouldBeEquivalentById(node);
-//            diagram.RootLayoutGroup.Nodes.ShouldBeEquivalentById(node);
-//        }
+        public DiagramTests()
+        {
+            _modelBuilder = new ModelBuilder();
+        }
 
-//        [Fact]
-//        public void AddNode_Nested_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
+        [Fact]
+        public void AddNode_Works()
+        {
+            var model = _modelBuilder.AddNodes("A").Model;
+            var node = _modelBuilder.GetNode("A");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id);
+            var diagram = CreateDiagram(model);
+            var diagramEvent = diagram.AddNode(node.Id);
 
-//            diagram.Nodes.ShouldBeEquivalentById(childNode, parentNode);
-//            diagram.RootLayoutGroup.Nodes.ShouldBeEquivalentById(parentNode);
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Nodes.ShouldBeEquivalentById(childNode);
-//        }
+            diagramEvent.NewDiagram.Nodes.ShouldBeEquivalentById(node.Id);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramNodeAddedEvent>().Which.NewNode.Id.Should().Be(node.Id)
+            );
+        }
 
-//        [Fact]
-//        public void UpdateNode_Nested_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
+        [Fact]
+        public void AddNodeToParent_Works()
+        {
+            var model = _modelBuilder.AddNodes("A").AddChildNodes("A", "B").Model;
+            var parentNode = _modelBuilder.GetNode("A");
+            var childNode = _modelBuilder.GetNode("B");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id)
-//                .UpdateNode(childNode.WithSize(new Size2D(1, 1)));
+            var diagram = CreateDiagram(model).AddNode(parentNode.Id).NewDiagram;
+            var diagramEvent = diagram.AddNode(childNode.Id, parentNode.Id);
 
-//            diagram.Nodes.ShouldBeEquivalentById(childNode, parentNode);
-//            diagram.GetNode(childNode.Id).Size.Should().Be(new Size2D(1, 1));
-//        }
+            diagramEvent.NewDiagram.Nodes.ShouldBeEquivalentById(parentNode.Id, childNode.Id);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i =>
+                {
+                    var newNode = i.Should().BeOfType<DiagramNodeAddedEvent>().Which.NewNode;
+                    newNode.Id.Should().Be(childNode.Id);
+                    newNode.ParentNodeId.Value.Should().Be(parentNode.Id);
+                });
+        }
 
-//        [Fact]
-//        public void RemoveNode_RootLevel_Works()
-//        {
-//            var node = new TestDiagramNode();
+        [Fact]
+        public void UpdateNodePayloadAreaSize_Works()
+        {
+            var model = _modelBuilder.AddNodes("A").Model;
+            var node = _modelBuilder.GetNode("A");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(node)
-//                .RemoveNode(node.Id);
+            var diagram = new DiagramBuilder(model).AddAllModelNodes().Diagram;
+            var diagramEvent = diagram.UpdateNodePayloadAreaSize(node.Id, new Size2D(1, 1));
 
-//            diagram.Nodes.Should().BeEmpty();
-//        }
+            diagramEvent.NewDiagram.GetNode(node.Id).PayloadAreaSize.Should().Be(new Size2D(1, 1));
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.PayloadAreaSize.Should().Be(new Size2D(1, 1))
+            );
+        }
 
-//        [Fact]
-//        public void RemoveNode_Nested_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
+        [Fact]
+        public void RemoveNode_Works()
+        {
+            var model = _modelBuilder.AddNodes("A").Model;
+            var node = _modelBuilder.GetNode("A");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id)
-//                .RemoveNode(childNode.Id);
+            var diagram = new DiagramBuilder(model).AddAllModelNodes().Diagram;
+            var diagramEvent = diagram.RemoveNode(node.Id);
 
-//            diagram.Nodes.ShouldBeEquivalentById(parentNode);
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Nodes.Should().BeEmpty();
-//        }
+            diagramEvent.NewDiagram.Nodes.Should().BeEmpty();
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramNodeRemovedEvent>().Which.OldNode.Id.Should().Be(node.Id)
+            );
+        }
 
-//        [Fact]
-//        public void AddConnector_InRootLayoutGroup_Works()
-//        {
-//            var node1 = new TestDiagramNode("node1");
-//            var node2 = new TestDiagramNode("node2");
-//            var testModelRelationship = new TestModelRelationship(node1.ModelNode, node2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, node1, node2, ConnectorTypes.Dependency);
+        [Fact]
+        public void AddConnector_Works()
+        {
+            var model = _modelBuilder.AddNodes("A", "B").AddRelationships("A->B").Model;
+            var relationship = _modelBuilder.GetRelationship("A->B");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(node1)
-//                .AddNode(node2)
-//                .AddConnector(connectorNode1Node2);
+            var diagram = new DiagramBuilder(model).AddAllModelNodes().Diagram;
+            var diagramEvent = diagram.AddConnector(relationship.Id);
 
-//            diagram.Connectors.ShouldBeEquivalentById(connectorNode1Node2);
-//            diagram.RootLayoutGroup.Connectors.ShouldBeEquivalentById(connectorNode1Node2);
-//            diagram.CrossLayoutGroupConnectors.Should().BeEmpty();
-//        }
+            diagramEvent.NewDiagram.Connectors.ShouldBeEquivalentById(relationship.Id);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramConnectorAddedEvent>().Which.NewConnector.Id.Should().Be(relationship.Id)
+            );
+        }
 
-//        [Fact]
-//        public void AddConnector_InNestedLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode1 = new TestDiagramNode("child1");
-//            var childNode2 = new TestDiagramNode("child2");
-//            var testModelRelationship = new TestModelRelationship(childNode1.ModelNode, childNode2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, childNode1, childNode2, ConnectorTypes.Dependency);
+        [Fact]
+        public void UpdateConnector_Works()
+        {
+            var model = _modelBuilder.AddNodes("A", "B").AddRelationships("A->B").Model;
+            var relationship = _modelBuilder.GetRelationship("A->B");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode1, parentNode.Id)
-//                .AddNode(childNode2, parentNode.Id)
-//                .AddConnector(connectorNode1Node2);
+            var diagram = new DiagramBuilder(model).AddAllModelItems().Diagram;
+            var diagramEvent = diagram.UpdateConnectorRoute(relationship.Id, TestRoute);
 
-//            diagram.Connectors.ShouldBeEquivalentById(connectorNode1Node2);
-//            diagram.RootLayoutGroup.Connectors.Should().BeEmpty();
-//            diagram.CrossLayoutGroupConnectors.Should().BeEmpty();
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Connectors.ShouldBeEquivalentById(connectorNode1Node2);
-//        }
+            diagramEvent.NewDiagram.Connectors.Single().Route.Should().BeEquivalentTo(TestRoute);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramConnectorRouteChangedEvent>().Which.NewConnector.Route.Should().BeEquivalentTo(TestRoute)
+            );
+        }
 
-//        [Fact]
-//        public void AddConnector_InCrossLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
-//            var testModelRelationship = new TestModelRelationship(parentNode.ModelNode, childNode.ModelNode);
-//            var connectorParentChild = new DiagramConnector(testModelRelationship, parentNode, childNode, ConnectorTypes.Dependency);
+        [Fact]
+        public void RemoveConnector_Works()
+        {
+            var model = _modelBuilder.AddNodes("A", "B").AddRelationships("A->B").Model;
+            var relationship = _modelBuilder.GetRelationship("A->B");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id)
-//                .AddConnector(connectorParentChild);
+            var diagram = new DiagramBuilder(model).AddAllModelItems().Diagram;
+            var diagramEvent = diagram.RemoveConnector(relationship.Id);
 
-//            diagram.Connectors.ShouldBeEquivalentById(connectorParentChild);
-//            diagram.RootLayoutGroup.Connectors.Should().BeEmpty();
-//            diagram.CrossLayoutGroupConnectors.ShouldBeEquivalentById(connectorParentChild);
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Connectors.Should().BeEmpty();
-//        }
+            diagramEvent.NewDiagram.Connectors.Should().BeEmpty();
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramConnectorRemovedEvent>().Which.OldConnector.Id.Should().Be(relationship.Id)
+            );
+        }
 
-//        [Fact]
-//        public void UpdateConnector_InRootLayoutGroup_Works()
-//        {
-//            var node1 = new TestDiagramNode("node1");
-//            var node2 = new TestDiagramNode("node2");
-//            var testModelRelationship = new TestModelRelationship(node1.ModelNode, node2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, node1, node2, ConnectorTypes.Dependency);
+        [Fact]
+        public void PathExists_WorksInRootLayoutGroup()
+        {
+            var model = _modelBuilder.AddNodes("A", "B").AddRelationships("A->B").Model;
+            var node1 = _modelBuilder.GetNode("A");
+            var node2 = _modelBuilder.GetNode("B");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(node1)
-//                .AddNode(node2)
-//                .AddConnector(connectorNode1Node2);
+            var diagram = new DiagramBuilder(model).AddAllModelItems().Diagram;
 
-//            diagram = diagram.UpdateConnector(connectorNode1Node2.WithRoute(TestRoute));
+            diagram.PathExists(node1.Id, node2.Id).Should().BeTrue();
+            diagram.PathExists(node2.Id, node1.Id).Should().BeFalse();
+        }
 
-//            var resultingConnectors = diagram.RootLayoutGroup.Connectors;
-//            resultingConnectors.Should().HaveCount(1);
-//            resultingConnectors.First().Route.Should().BeEquivalentTo(TestRoute);
-//        }
+        [Fact]
+        public void PathExists_WorksInNestedLayoutGroup()
+        {
+            var model = _modelBuilder
+                .AddNodes("parent")
+                .AddChildNodes("parent", "child1", "child2")
+                .AddRelationships("child1->child2")
+                .Model;
 
-//        [Fact]
-//        public void UpdateConnector_InNestedLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode1 = new TestDiagramNode("child1");
-//            var childNode2 = new TestDiagramNode("child2");
-//            var testModelRelationship = new TestModelRelationship(childNode1.ModelNode, childNode2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, childNode1, childNode2, ConnectorTypes.Dependency);
+            var childNode1 = _modelBuilder.GetNode("child1");
+            var childNode2 = _modelBuilder.GetNode("child2");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode1, parentNode.Id)
-//                .AddNode(childNode2, parentNode.Id)
-//                .AddConnector(connectorNode1Node2);
+            var diagram = new DiagramBuilder(model).AddAllModelItems().Diagram;
 
-//            diagram = diagram.UpdateConnector(connectorNode1Node2.WithRoute(TestRoute));
+            diagram.PathExists(childNode1.Id, childNode2.Id).Should().BeTrue();
+            diagram.PathExists(childNode2.Id, childNode1.Id).Should().BeFalse();
+        }
 
-//            var resultingConnectors = diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Connectors;
-//            resultingConnectors.Should().HaveCount(1);
-//            resultingConnectors.First().Route.Should().BeEquivalentTo(TestRoute);
-//        }
+        [Fact]
+        public void PathExists_WorksBetweenLayoutGroups()
+        {
+            var model = _modelBuilder
+                .AddNodes("parent1", "parent2")
+                .AddChildNodes("parent1", "child1")
+                .AddChildNodes("parent1", "child2")
+                .AddRelationships("child1->child2")
+                .Model;
 
-//        [Fact]
-//        public void UpdateConnector_InCrossLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
-//            var testModelRelationship = new TestModelRelationship(parentNode.ModelNode, childNode.ModelNode);
-//            var connectorParentChild = new DiagramConnector(testModelRelationship, parentNode, childNode, ConnectorTypes.Dependency);
+            var parentNode1 = _modelBuilder.GetNode("parent1");
+            var parentNode2 = _modelBuilder.GetNode("parent2");
+            var childNode1 = _modelBuilder.GetNode("child1");
+            var childNode2 = _modelBuilder.GetNode("child2");
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id)
-//                .AddConnector(connectorParentChild);
+            var diagram = new DiagramBuilder(model).AddAllModelItems().Diagram;
 
-//            diagram = diagram.UpdateConnector(connectorParentChild.WithRoute(TestRoute));
+            diagram.PathExists(childNode1.Id, childNode2.Id).Should().BeTrue();
+            diagram.PathExists(childNode2.Id, childNode1.Id).Should().BeFalse();
+            diagram.PathExists(parentNode1.Id, parentNode2.Id).Should().BeFalse();
+        }
 
-//            var resultingConnectors = diagram.CrossLayoutGroupConnectors;
-//            resultingConnectors.Should().HaveCount(1);
-//            resultingConnectors.First().Route.Should().BeEquivalentTo(TestRoute);
-//        }
+        [Fact]
+        public void ApplyLayout_RootNodesOnly_Works()
+        {
+            var model = _modelBuilder
+                .AddNodes("A", "B")
+                .AddRelationships("A->B")
+                .Model;
 
-//        [Fact]
-//        public void RemoveConnector_FromRootLayoutGroup_Works()
-//        {
-//            var node1 = new TestDiagramNode("node1");
-//            var node2 = new TestDiagramNode("node2");
-//            var testModelRelationship = new TestModelRelationship(node1.ModelNode, node2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, node1, node2, ConnectorTypes.Dependency);
+            var diagramBuilder = new DiagramBuilder(model).AddAllModelItems();
+            var diagram = diagramBuilder.Diagram;
 
-//            var diagram = Diagram.Empty
-//                .AddNode(node1)
-//                .AddNode(node2)
-//                .AddConnector(connectorNode1Node2)
-//                .RemoveConnector(testModelRelationship.Id);
+            var diagramNodeA = diagramBuilder.GetDiagramNode("A");
+            var diagramNodeB = diagramBuilder.GetDiagramNode("B");
+            var diagramConnectorAtoB = diagramBuilder.GetDiagramConnector("A->B");
 
-//            diagram.Connectors.Should().BeEmpty();
-//            diagram.RootLayoutGroup.Connectors.Should().BeEmpty();
-//            diagram.CrossLayoutGroupConnectors.Should().BeEmpty();
-//        }
+            var layout = new GroupLayoutInfo(
+                new[]
+                {
+                    new BoxLayoutInfo(diagramNodeA.ShapeId, topLeft: (1, 1), payloadAreaSize: Size2D.Zero, childrenAreaSize: Size2D.Zero),
+                    new BoxLayoutInfo(diagramNodeB.ShapeId, topLeft: (2, 2), payloadAreaSize: Size2D.Zero, childrenAreaSize: Size2D.Zero)
+                },
+                new[]
+                {
+                    new LineLayoutInfo(diagramConnectorAtoB.ShapeId, new Route((1, 1), (2, 2)))
+                }
+            );
 
-//        [Fact]
-//        public void RemoveConnector_FromNestedLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode1 = new TestDiagramNode("child1");
-//            var childNode2 = new TestDiagramNode("child2");
-//            var testModelRelationship = new TestModelRelationship(childNode1.ModelNode, childNode2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, childNode1, childNode2, ConnectorTypes.Dependency);
+            var expectedDiagram = diagramBuilder
+                .UpdateNodeTopLeft("A", (1, 1))
+                .UpdateNodeTopLeft("B", (2, 2))
+                .UpdateConnectorRoute("A->B", new Route((1, 1), (2, 2)))
+                .Diagram;
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode1, parentNode.Id)
-//                .AddNode(childNode2, parentNode.Id)
-//                .AddConnector(connectorNode1Node2)
-//                .RemoveConnector(testModelRelationship.Id);
+            var diagramEvent = diagram.ApplyLayout(layout);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i => i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(1, 1, 1, 1)),
+                i => i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(2, 2, 2, 2)),
+                i => i.Should().BeOfType<DiagramConnectorRouteChangedEvent>().Which.NewConnector.Route.Should().BeEquivalentTo(new Route((1, 1), (2, 2)))
+            );
 
-//            diagram.Connectors.Should().BeEmpty();
-//            diagram.RootLayoutGroup.Connectors.Should().BeEmpty();
-//            diagram.CrossLayoutGroupConnectors.Should().BeEmpty();
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Connectors.Should().BeEmpty();
-//        }
+            AllRectsShouldMatch(diagramEvent.NewDiagram, expectedDiagram);
+        }
 
-//        [Fact]
-//        public void RemoveConnector_FromCrossLayoutGroup_Works()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode = new TestDiagramNode("child");
-//            var testModelRelationship = new TestModelRelationship(parentNode.ModelNode, childNode.ModelNode);
-//            var connectorParentChild = new DiagramConnector(testModelRelationship, parentNode, childNode, ConnectorTypes.Dependency);
+        [Fact]
+        public void ApplyLayout_WithChildNodes_Works()
+        {
+            var model = _modelBuilder
+                .AddNodes("A", "B")
+                .AddChildNodes("A", "A1", "A2")
+                .AddRelationships("A->B", "A1->A2", "A2->B")
+                .Model;
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode, parentNode.Id)
-//                .AddConnector(connectorParentChild)
-//                .RemoveConnector(testModelRelationship.Id);
+            var diagramBuilder = new DiagramBuilder(model).AddAllModelItems();
+            var diagram = diagramBuilder.Diagram;
 
-//            diagram.Connectors.Should().BeEmpty();
-//            diagram.RootLayoutGroup.Connectors.Should().BeEmpty();
-//            diagram.CrossLayoutGroupConnectors.Should().BeEmpty();
-//            diagram.GetNode(parentNode.Id).As<IContainerDiagramNode>().LayoutGroup.Connectors.Should().BeEmpty();
-//        }
+            var diagramNodeA = diagramBuilder.GetDiagramNode("A");
+            var diagramNodeA1 = diagramBuilder.GetDiagramNode("A1");
+            var diagramNodeA2 = diagramBuilder.GetDiagramNode("A2");
+            var diagramNodeB = diagramBuilder.GetDiagramNode("B");
 
-//        [Fact]
-//        public void PathExists_WorksInRootLayoutGroup()
-//        {
-//            var node1 = new TestDiagramNode("node1");
-//            var node2 = new TestDiagramNode("node2");
-//            var testModelRelationship = new TestModelRelationship(node1.ModelNode, node2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, node1, node2, ConnectorTypes.Dependency);
+            var layout = new GroupLayoutInfo(
+                new[]
+                {
+                    new BoxLayoutInfo(
+                        diagramNodeA.ShapeId,
+                        topLeft: (1, 1),
+                        payloadAreaSize: Size2D.Zero,
+                        childrenAreaSize: (2, 2),
+                        new GroupLayoutInfo(
+                            new[]
+                            {
+                                new BoxLayoutInfo(diagramNodeA1.ShapeId, topLeft: (2, 2), payloadAreaSize: Size2D.Zero, childrenAreaSize: Size2D.Zero),
+                                new BoxLayoutInfo(diagramNodeA2.ShapeId, topLeft: (4, 4), payloadAreaSize: Size2D.Zero, childrenAreaSize: Size2D.Zero)
+                            })),
+                    new BoxLayoutInfo(diagramNodeB.ShapeId, topLeft: (9, 9), payloadAreaSize: Size2D.Zero, childrenAreaSize: Size2D.Zero)
+                },
+                new List<LineLayoutInfo>());
 
-//            var diagram = Diagram.Empty
-//                .AddNode(node1)
-//                .AddNode(node2)
-//                .AddConnector(connectorNode1Node2);
+            var expectedDiagram = diagramBuilder
+                .UpdateNodeTopLeft("A", (1, 1)).UpdateChildrenAreaSize("A", 2, 2)
+                .UpdateNodeTopLeft("A1", (2, 2))
+                .UpdateNodeTopLeft("A2", (4, 4))
+                .UpdateNodeTopLeft("B", (9, 9))
+                .Diagram;
 
-//            diagram.PathExists(node1.Id, node2.Id).Should().BeTrue();
-//            diagram.PathExists(node2.Id, node1.Id).Should().BeFalse();
-//        }
+            var diagramEvent = diagram.ApplyLayout(layout);
 
-//        [Fact]
-//        public void PathExists_WorksInNestedLayoutGroup()
-//        {
-//            var parentNode = new TestDiagramNode("parent");
-//            var childNode1 = new TestDiagramNode("child1");
-//            var childNode2 = new TestDiagramNode("child2");
-//            var testModelRelationship = new TestModelRelationship(childNode1.ModelNode, childNode2.ModelNode);
-//            var connectorNode1Node2 = new DiagramConnector(testModelRelationship, childNode1, childNode2, ConnectorTypes.Dependency);
+            AllRectsShouldMatch(diagramEvent.NewDiagram, expectedDiagram);
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode)
-//                .AddNode(childNode1, parentNode.Id)
-//                .AddNode(childNode2, parentNode.Id)
-//                .AddConnector(connectorNode1Node2);
+            diagramEvent.ShapeEvents.Should().SatisfyRespectively(
+                i =>
+                {
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.ChangedMember.Should().Be(DiagramNodeMember.Position);
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(2, 2, 2, 2));
+                },
+                i =>
+                {
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.ChangedMember.Should().Be(DiagramNodeMember.Position);
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(4, 4, 4, 4));
+                },
+                i =>
+                {
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.ChangedMember.Should().Be(DiagramNodeMember.Position);
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(1, 1, 3, 3));
+                },
+                i =>
+                {
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.ChangedMember.Should().Be(DiagramNodeMember.ChildrenAreaSize);
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(1, 1, 3, 3));
+                },
+                i =>
+                {
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.ChangedMember.Should().Be(DiagramNodeMember.Position);
+                    i.Should().BeOfType<DiagramNodeChangedEvent>().Which.NewNode.Rect.Should().Be(new Rect2D(9, 9, 9, 9));
+                }
+            );
 
-//            diagram.PathExists(childNode1.Id, childNode2.Id).Should().BeTrue();
-//            diagram.PathExists(childNode2.Id, childNode1.Id).Should().BeFalse();
-//        }
+            // TODO: check connectors updated too
+        }
 
-//        [Fact]
-//        public void PathExists_WorksBetweenLayoutGroups()
-//        {
-//            var parentNode1 = new TestDiagramNode("parent1");
-//            var childNode1 = new TestDiagramNode("child1");
-//            var parentNode2 = new TestDiagramNode("parent2");
-//            var childNode2 = new TestDiagramNode("child2");
-//            var testModelRelationship = new TestModelRelationship(childNode1.ModelNode, childNode2.ModelNode);
-//            var connectorChild1Child2 = new DiagramConnector(testModelRelationship, childNode1, childNode2, ConnectorTypes.Dependency);
+        private static void AllRectsShouldMatch([NotNull] IDiagram actualDiagram, [NotNull] IDiagram expectedDiagram)
+        {
+            actualDiagram.Nodes.OrderBy(i => i.Id).Select(i => i.Rect).Should().Equal(expectedDiagram.Nodes.OrderBy(i => i.Id).Select(i => i.Rect));
+            actualDiagram.Connectors.OrderBy(i => i.Id).Select(i => i.Rect).Should().Equal(expectedDiagram.Connectors.OrderBy(i => i.Id).Select(i => i.Rect));
+        }
 
-//            var diagram = Diagram.Empty
-//                .AddNode(parentNode1)
-//                .AddNode(childNode1, parentNode1.Id)
-//                .AddNode(parentNode2)
-//                .AddNode(childNode2, parentNode2.Id)
-//                .AddConnector(connectorChild1Child2);
+        [NotNull]
+        private static IDiagram CreateDiagram([NotNull] IModel model)
+        {
+            return Diagram.Create(model, new DummyConnectorTypeResolver());
+        }
 
-//            diagram.PathExists(childNode1.Id, childNode2.Id).Should().BeTrue();
-//            diagram.PathExists(childNode2.Id, childNode1.Id).Should().BeFalse();
-//            diagram.PathExists(parentNode1.Id, parentNode2.Id).Should().BeFalse();
-//        }
-//    }
-//}
+        private sealed class DummyConnectorTypeResolver : IConnectorTypeResolver
+        {
+            public ConnectorType GetConnectorType(ModelRelationshipStereotype stereotype) => ConnectorTypes.Dependency;
+        }
+    }
+}

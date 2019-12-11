@@ -21,7 +21,8 @@ namespace Codartis.Util
             return sourceList.Take(sourceList.Count - count);
         }
 
-        public static IEnumerable<T> EmptyIfNull<T>(this IEnumerable<T> collection)
+        [NotNull]
+        public static IEnumerable<T> EmptyIfNull<T>([CanBeNull] this IEnumerable<T> collection)
         {
             return collection ?? Enumerable.Empty<T>();
         }
@@ -46,7 +47,9 @@ namespace Codartis.Util
             var comparer = EqualityComparer<T>.Default;
             foreach (var item in source)
             {
-                if (comparer.Equals(item, value)) return index;
+                if (comparer.Equals(item, value))
+                    return index;
+
                 index++;
             }
 
@@ -76,6 +79,20 @@ namespace Codartis.Util
         }
 
         [NotNull]
+        public static IEnumerable<TAggregate> RollingAggregate<TItem, TAggregate>(
+            [NotNull] this IEnumerable<TItem> items,
+            [NotNull] Func<TItem, TAggregate, TAggregate> aggregator,
+            TAggregate seed = default)
+        {
+            var result = seed;
+            foreach (var item in items)
+            {
+                result = aggregator(item, result);
+                yield return result;
+            }
+        }
+
+        [NotNull]
         [ItemNotNull]
         public static async Task<IEnumerable<TResult>> SelectAsync<T, TResult>(this IEnumerable<T> enumeration, Func<T, Task<TResult>> func)
         {
@@ -85,6 +102,18 @@ namespace Codartis.Util
         public static async Task<IEnumerable<TResult>> SelectManyAsync<T, TResult>(this IEnumerable<T> enumeration, Func<T, Task<IEnumerable<TResult>>> func)
         {
             return (await Task.WhenAll(enumeration.Select(func))).SelectMany(s => s);
+        }
+
+        [NotNull]
+        public static IEnumerable<TResult> SelectPairs<T, TResult>([NotNull] this IEnumerable<T> enumeration, [NotNull] Func<T, T, TResult> func)
+        {
+            var array = enumeration.ToArray();
+
+            if (array.Length % 2 != 0)
+                throw new ArgumentException($"Collection must have even number of items but has {array.Length}");
+
+            for (int i = 0; i < array.Length; i += 2)
+                yield return func(array[i], array[i + 1]);
         }
     }
 }

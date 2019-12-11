@@ -1,70 +1,69 @@
-﻿using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
-using Codartis.SoftVis.Diagramming.Layout;
-using Codartis.SoftVis.Diagramming.Layout.Incremental;
+﻿using System;
+using System.Linq;
+using System.Reactive.Linq;
+using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
+using Codartis.SoftVis.Diagramming.Definition.Layout;
 using Codartis.SoftVis.Modeling.Definition;
+using Codartis.Util;
+using JetBrains.Annotations;
 
 namespace Codartis.SoftVis.Services.Plugins
 {
     /// <summary>
-    /// A diagram that maintains it own layout.
-    /// Responds to shape addition/removal and uses a layout engine that calculates how to arrange nodes and connectors.
+    /// Listens to diagram modification events and performs layout.
     /// </summary>
     public sealed class AutoLayoutDiagramPlugin : DiagramPluginBase
     {
-        private readonly ILayoutPriorityProvider _layoutPriorityProvider;
-        private IIncrementalLayoutEngine _incrementalLayoutEngine;
+        private static readonly TimeSpan DiagramEventDebounceTimeSpan = TimeSpan.FromMilliseconds(50);
 
-        public AutoLayoutDiagramPlugin(ILayoutPriorityProvider layoutPriorityProvider)
+        private static readonly DiagramNodeMember[] DiagramMembersAffectedByLayout =
         {
-            _layoutPriorityProvider = layoutPriorityProvider;
-        }
+            DiagramNodeMember.ChildrenAreaSize,
+            DiagramNodeMember.Position
+        };
 
-        public override void Initialize(IModelService modelService, IDiagramService diagramService)
+        [NotNull] private readonly IDiagramLayoutAlgorithm _layoutAlgorithm;
+        [NotNull] private readonly IDisposable _diagramChangedSubscription;
+
+        public AutoLayoutDiagramPlugin(
+            [NotNull] IModelService modelService,
+            [NotNull] IDiagramService diagramService,
+            [NotNull] IDiagramLayoutAlgorithm layoutAlgorithm)
+            : base(modelService, diagramService)
         {
-            base.Initialize(modelService, diagramService);
+            _layoutAlgorithm = layoutAlgorithm;
 
-            var layoutCalculator = new IncrementalLayoutCalculator(_layoutPriorityProvider);
-            _incrementalLayoutEngine = new IncrementalLayoutEngine(layoutCalculator, diagramService);
-
-            DiagramService.DiagramChanged += OnDiagramChanged;
+            _diagramChangedSubscription = DiagramService.DiagramChangedEventStream
+                .Throttle(DiagramEventDebounceTimeSpan)
+                .Subscribe(OnDiagramChanged);
         }
 
         public override void Dispose()
         {
-            DiagramService.DiagramChanged -= OnDiagramChanged;
-
-            _incrementalLayoutEngine?.Dispose();
+            _diagramChangedSubscription.Dispose();
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent diagramEvent)
         {
-            switch (diagramEvent)
+            if (diagramEvent.ShapeEvents.All(i => !IsLayoutTriggeringChange(i)))
+                return;
+
+            var diagram = diagramEvent.NewDiagram;
+            var diagramLayoutInfo = _layoutAlgorithm.Calculate(diagram);
+
+            DiagramService.ApplyLayout(diagramLayoutInfo);
+        }
+
+        private static bool IsLayoutTriggeringChange(DiagramShapeEventBase diagramShapeEvent)
+        {
+            switch (diagramShapeEvent)
             {
-                case DiagramNodeAddedEvent diagramNodeAddedEvent:
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new AddDiagramNodeAction(diagramNodeAddedEvent.NewNode));
-                    break;
-
-                case DiagramConnectorAddedEvent diagramConnectorAddedEvent:
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new AddDiagramConnectorAction(diagramConnectorAddedEvent.NewConnector));
-                    break;
-
-                case DiagramNodeSizeChangedEvent diagramNodeSizeChangedEvent:
-                    var diagramNode = diagramNodeSizeChangedEvent.NewNode;
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new ResizeDiagramNodeAction(diagramNode, diagramNode.Size));
-                    break;
-
-                case DiagramNodeRemovedEvent diagramNodeRemovedEvent:
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new RemoveDiagramNodeAction(diagramNodeRemovedEvent.OldNode));
-                    break;
-
-                case DiagramConnectorRemovedEvent diagramConnectorRemovedEvent:
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new RemoveDiagramConnectorAction(diagramConnectorRemovedEvent.OldConnector));
-                    break;
-
-                case DiagramClearedEvent _:
-                    _incrementalLayoutEngine.EnqueueDiagramAction(new ClearDiagramAction());
-                    break;
+                case DiagramNodeChangedEvent nodeChangedEvent when nodeChangedEvent.ChangedMember.In(DiagramMembersAffectedByLayout):
+                case DiagramConnectorRouteChangedEvent _:
+                    return false;
+                default:
+                    return true;
             }
         }
     }

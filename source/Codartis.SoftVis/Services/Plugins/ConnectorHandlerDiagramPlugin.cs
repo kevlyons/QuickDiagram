@@ -1,6 +1,7 @@
-﻿using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
+﻿using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
 using Codartis.SoftVis.Modeling.Definition;
+using JetBrains.Annotations;
 
 namespace Codartis.SoftVis.Services.Plugins
 {
@@ -8,31 +9,33 @@ namespace Codartis.SoftVis.Services.Plugins
     /// Automatically shows relationships when both ends are visible
     /// and removes redundant connectors from the diagram.
     /// </summary>
-    public class ConnectorHandlerDiagramPlugin : ConnectorManipulatorDiagramPluginBase
+    public sealed class ConnectorHandlerDiagramPlugin : ConnectorManipulatorDiagramPluginBase
     {
-        public ConnectorHandlerDiagramPlugin(IDiagramShapeFactory diagramShapeFactory)
-            : base(diagramShapeFactory)
+        public ConnectorHandlerDiagramPlugin(
+            [NotNull] IModelService modelService,
+            [NotNull] IDiagramService diagramService)
+            : base(modelService, diagramService)
         {
-        }
-
-        public override void Initialize(IModelService modelService, IDiagramService diagramService)
-        {
-            base.Initialize(modelService, diagramService);
-
-            DiagramService.DiagramChanged += OnDiagramChanged;
+            DiagramService.AfterDiagramChanged += OnDiagramChanged;
         }
 
         public override void Dispose()
         {
-            DiagramService.DiagramChanged -= OnDiagramChanged;
+            DiagramService.AfterDiagramChanged -= OnDiagramChanged;
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent @event)
         {
-            var model = ModelService.Model;
-            var diagram = diagramEvent.NewDiagram;
+            var diagram = @event.NewDiagram;
+            var model = diagram.Model;
 
-            switch (diagramEvent)
+            foreach (var change in @event.ShapeEvents)
+                ProcessDiagramChange(change, model, diagram);
+        }
+
+        private void ProcessDiagramChange(DiagramShapeEventBase diagramShapeEvent, IModel model, IDiagram diagram)
+        {
+            switch (diagramShapeEvent)
             {
                 case DiagramNodeAddedEvent diagramNodeAddedEvent:
                     var modelNode = diagramNodeAddedEvent.NewNode.ModelNode;
@@ -49,9 +52,9 @@ namespace Codartis.SoftVis.Services.Plugins
                     HideRedundantConnectors(diagram);
                     break;
 
-                    // DiagramConnectorRemovedEvent is not handled 
-                    // because that would put back removed connectors immediately
-                    // (because nodes are removed after connectors)
+                // DiagramConnectorRemovedEvent is not handled 
+                // because that would put back removed connectors immediately
+                // (because nodes are removed after connectors)
             }
         }
 

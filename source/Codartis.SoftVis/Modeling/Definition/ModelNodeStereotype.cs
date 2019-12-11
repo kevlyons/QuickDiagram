@@ -1,17 +1,46 @@
-﻿namespace Codartis.SoftVis.Modeling.Definition
+﻿using JetBrains.Annotations;
+
+namespace Codartis.SoftVis.Modeling.Definition
 {
     /// <summary>
-    /// Extensible list of model node types.
+    /// A model node type.
     /// </summary>
-    public sealed class ModelNodeStereotype
+    public struct ModelNodeStereotype
     {
-        public string Name { get; }
+        public static ModelNodeStereotype Default = default;
 
-        public ModelNodeStereotype(string name)
+        [NotNull] public string Name { get; }
+
+        public ModelNodeStereotype([NotNull] string name)
         {
             Name = name;
         }
 
         public override string ToString() => Name;
+
+        public bool Equals(ModelNodeStereotype other)
+        {
+            return Name == other.Name;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is ModelNodeStereotype other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return Name.GetHashCode();
+        }
+
+        public static bool operator ==(ModelNodeStereotype left, ModelNodeStereotype right)
+        {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(ModelNodeStereotype left, ModelNodeStereotype right)
+        {
+            return !left.Equals(right);
+        }
     }
 }

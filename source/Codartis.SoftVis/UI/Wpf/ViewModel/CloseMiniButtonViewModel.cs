@@ -1,4 +1,4 @@
-﻿using Codartis.SoftVis.Diagramming;
+﻿using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Modeling.Definition;
 
 namespace Codartis.SoftVis.UI.Wpf.ViewModel
@@ -21,7 +21,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         protected override void OnClick()
         {
-            if (HostViewModel is DiagramNodeViewModelBase diagramNodeViewModel)
+            if (HostViewModel is DiagramNodeViewModel diagramNodeViewModel)
                 diagramNodeViewModel.Remove();
         }
     }

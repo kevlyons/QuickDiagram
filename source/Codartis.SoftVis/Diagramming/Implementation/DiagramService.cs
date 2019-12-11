@@ -1,141 +1,182 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reactive.Subjects;
+using System.Threading;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Geometry;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.Util;
+using JetBrains.Annotations;
 
 namespace Codartis.SoftVis.Diagramming.Implementation
 {
     /// <summary>
     /// Implements diagram-related operations.
     /// </summary>
-    public class DiagramService : IDiagramService
+    /// <remarks>
+    /// Mutators must not run concurrently. A lock ensures it.
+    /// Events are raised after the lock was released to avoid potential deadlocks.
+    /// </remarks>
+    public sealed class DiagramService : IDiagramService
     {
-        protected DiagramStore DiagramStore { get; }
+        public IDiagram LatestDiagram { get; private set; }
 
-        public DiagramService(IDiagram diagram)
+        [NotNull] private readonly object _diagramUpdateLockObject;
+        [NotNull] private readonly IConnectorTypeResolver _connectorTypeResolver;
+        [NotNull] private readonly ISubject<DiagramEvent> _diagramChangedEventStream;
+
+        public event Action<DiagramEvent> DiagramChanged;
+        public event Action<DiagramEvent> AfterDiagramChanged;
+
+        public DiagramService([NotNull] IDiagram diagram, [NotNull] IConnectorTypeResolver connectorTypeResolver)
         {
-            DiagramStore = new DiagramStore(diagram);
+            LatestDiagram = diagram;
+            _diagramUpdateLockObject = new object();
+            _connectorTypeResolver = connectorTypeResolver;
+            _diagramChangedEventStream = new Subject<DiagramEvent>();
         }
 
-        public IDiagram Diagram => DiagramStore.Diagram;
-
-        public event Action<DiagramEventBase> DiagramChanged
+        public DiagramService([NotNull] IModel model, [NotNull] IConnectorTypeResolver connectorTypeResolver)
+            : this(Diagram.Create(model, connectorTypeResolver), connectorTypeResolver)
         {
-            add => DiagramStore.DiagramChanged += value;
-            remove => DiagramStore.DiagramChanged -= value;
         }
 
-        public void AddNode(IDiagramNode node) => DiagramStore.AddNode(node);
-        public void RemoveNode(ModelNodeId nodeId) => DiagramStore.RemoveNode(nodeId);
+        public IObservable<DiagramEvent> DiagramChangedEventStream => _diagramChangedEventStream;
 
-        public void UpdateDiagramNodeModelNode(IDiagramNode diagramNode, IModelNode newModelNode)
-            => DiagramStore.UpdateDiagramNodeModelNode(diagramNode, newModelNode);
-
-        public void UpdateDiagramNodeSize(IDiagramNode diagramNode, Size2D newSize) => DiagramStore.UpdateDiagramNodeSize(diagramNode, newSize);
-        public void UpdateDiagramNodeCenter(IDiagramNode diagramNode, Point2D newCenter) => DiagramStore.UpdateDiagramNodeCenter(diagramNode, newCenter);
-        public void UpdateDiagramNodeTopLeft(IDiagramNode diagramNode, Point2D newTopLeft) => DiagramStore.UpdateDiagramNodeTopLeft(diagramNode, newTopLeft);
-        public void AddConnector(IDiagramConnector connector) => DiagramStore.AddConnector(connector);
-        public void RemoveConnector(ModelRelationshipId connectorId) => DiagramStore.RemoveConnector(connectorId);
-        public void UpdateConnectorRoute(ModelRelationshipId connectorId, Route newRoute) => DiagramStore.UpdateConnectorRoute(connectorId, newRoute);
-        public void ClearDiagram() => DiagramStore.ClearDiagram();
-
-        //public abstract ConnectorType GetConnectorType(ModelRelationshipStereotype modelRelationshipStereotype);
-
-        public IDiagramNode GetDiagramNode(ModelNodeId id) => Diagram.GetNode(id);
-
-        //public IDiagramNode ShowModelNode(IModelNode modelNode)
-        //{
-        //    return DiagramStore.Diagram.TryGetNode(modelNode.Id).Match(
-        //        node => node,
-        //        () => AddNode(modelNode)
-        //    );
-        //}
-
-        //private IDiagramNode AddNode(IModelNode modelNode)
-        //{
-        //   var maybeParentModelNode =  ModelService.Model.TryGetParentNode(modelNode.Id);
-
-        //    var diagramNode = new DiagramNode(modelNode, maybeParentModelNode.FromMaybe());
-        //    DiagramStore.AddNode(diagramNode);
-        //    return diagramNode;
-        //}
-
-        //public IReadOnlyList<IDiagramNode> ShowModelNodes(
-        //    IEnumerable<IModelNode> modelNodes,
-        //    CancellationToken cancellationToken,
-        //    IIncrementalProgress progress)
-        //{
-        //    var diagramNodes = new List<IDiagramNode>();
-
-        //    foreach (var modelNode in modelNodes)
-        //    {
-        //        cancellationToken.ThrowIfCancellationRequested();
-
-        //        var diagramNode = ShowModelNode(modelNode);
-        //        diagramNodes.Add(diagramNode);
-
-        //        progress?.Report(1);
-        //    }
-
-        //    return diagramNodes;
-        //}
-
-        //public void HideModelNode(ModelNodeId modelNodeId)
-        //{
-        //    var diagram = DiagramStore.Diagram;
-        //    if (diagram.NodeExists(modelNodeId))
-        //        RemoveNode(modelNodeId, diagram);
-        //}
-
-        private void RemoveNode(ModelNodeId modelNodeId, IDiagram diagram)
+        public void AddNode(ModelNodeId nodeId, ModelNodeId? parentNodeId = null)
         {
-            var diagramConnectors = diagram.GetConnectorsByNode(modelNodeId);
-            foreach (var diagramConnector in diagramConnectors)
-                DiagramStore.RemoveConnector(diagramConnector.Id);
-
-            DiagramStore.RemoveNode(modelNodeId);
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.AddNode(nodeId, parentNodeId));
         }
 
-        //public void ShowModelRelationship(IModelRelationship modelRelationship)
-        //{
-        //    if (modelRelationship.Stereotype == ModelRelationshipStereotype.Containment)
-        //        return;
-
-        //    var diagram = DiagramStore.Diagram;
-        //    if (diagram.ConnectorExists(modelRelationship.Id))
-        //        return;
-
-        //    var diagramConnectorSpec = DiagramShapeFactory.CreateDiagramConnector(modelRelationship);
-        //    DiagramStore.AddConnector(diagramConnectorSpec);
-        //}
-
-        //public void HideModelRelationship(ModelRelationshipId modelRelationshipId)
-        //{
-        //    var diagram = DiagramStore.Diagram;
-        //    if (diagram.ConnectorExists(modelRelationshipId))
-        //        DiagramStore.RemoveConnector(modelRelationshipId);
-        //}
-
-        public Maybe<IContainerDiagramNode> TryGetContainerNode(IDiagramNode diagramNode)
+        public void UpdateNodePayloadAreaSize(ModelNodeId nodeId, Size2D newSize)
         {
-            return diagramNode.ParentNodeId == null
-                ? Maybe<IContainerDiagramNode>.Nothing
-                : Maybe.Create((IContainerDiagramNode)GetDiagramNode(diagramNode.ParentNodeId.Value));
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateNodePayloadAreaSize(nodeId, newSize));
         }
 
-        public Rect2D GetRect(IEnumerable<ModelNodeId> modelNodeIds)
+        public void UpdateNodeChildrenAreaSize(ModelNodeId nodeId, Size2D newSize)
         {
-            var diagram = Diagram;
-            return modelNodeIds
-                .Select(i => diagram.TryGetNode(i).Match(j => j.Rect, () => Rect2D.Zero))
-                .Union();
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateNodeChildrenAreaSize(nodeId, newSize));
+        }
+
+        public void UpdateNodeCenter(ModelNodeId nodeId, Point2D newCenter)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateNodeCenter(nodeId, newCenter));
+        }
+
+        public void UpdateNodeTopLeft(ModelNodeId nodeId, Point2D newTopLeft)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateNodeTopLeft(nodeId, newTopLeft));
+        }
+
+        public void RemoveNode(ModelNodeId nodeId)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.RemoveNode(nodeId));
+        }
+
+        public void AddConnector(ModelRelationshipId relationshipId)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.AddConnector(relationshipId));
+        }
+
+        public void UpdateConnectorRoute(ModelRelationshipId relationshipId, Route newRoute)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateConnectorRoute(relationshipId, newRoute));
+        }
+
+        public void RemoveConnector(ModelRelationshipId relationshipId)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.RemoveConnector(relationshipId));
+        }
+
+        public void UpdateModel(IModel model)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateModel(model));
+        }
+
+        public void UpdateModelNode(IModelNode updatedModelNode)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.UpdateModelNode(updatedModelNode));
+        }
+
+        public void ApplyLayout(GroupLayoutInfo diagramLayout)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.ApplyLayout(diagramLayout));
+        }
+
+        public void ClearDiagram()
+        {
+            MutateWithLockThenRaiseEvents(() => LatestDiagram.Clear());
+        }
+
+        private void MutateWithLockThenRaiseEvents([NotNull] Func<DiagramEvent> diagramMutatorFunc)
+        {
+            DiagramEvent diagramEvent;
+
+            lock (_diagramUpdateLockObject)
+            {
+                diagramEvent = diagramMutatorFunc.Invoke();
+                LatestDiagram = diagramEvent.NewDiagram;
+            }
+
+            DiagramChanged?.Invoke(diagramEvent);
+            _diagramChangedEventStream.OnNext(diagramEvent);
+            AfterDiagramChanged?.Invoke(diagramEvent);
         }
 
         public ConnectorType GetConnectorType(ModelRelationshipStereotype stereotype)
         {
-            throw new NotImplementedException();
+            return _connectorTypeResolver.GetConnectorType(stereotype);
+        }
+
+        public void AddNodes(
+            IEnumerable<ModelNodeId> modelNodeIds,
+            CancellationToken cancellationToken = default,
+            IIncrementalProgress progress = null)
+        {
+            foreach (var modelNodeId in modelNodeIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var parentNodeId = GetParentDiagramNodeId(modelNodeId);
+                AddNode(modelNodeId, parentNodeId);
+
+                progress?.Report(1);
+            }
+        }
+
+        public void AddConnectors(
+            IEnumerable<ModelRelationshipId> modelRelationshipIds,
+            CancellationToken cancellationToken = default,
+            IIncrementalProgress progress = null)
+        {
+            foreach (var modelRelationshipId in modelRelationshipIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                AddConnector(modelRelationshipId);
+
+                progress?.Report(1);
+            }
+        }
+
+        private ModelNodeId? GetParentDiagramNodeId(ModelNodeId modelNodeId)
+        {
+            var containerNodes = LatestDiagram.Model
+                .GetRelatedNodes(modelNodeId, CommonDirectedModelRelationshipTypes.Container, recursive: false)
+                .ToList();
+
+            if (!containerNodes.Any())
+                return null;
+
+            if (containerNodes.Count > 1)
+                throw new Exception($"{modelNodeId} has more than 1 containers.");
+
+            var potentialContainerNode = containerNodes.First();
+            if (LatestDiagram.NodeExists(potentialContainerNode.Id))
+                return potentialContainerNode.Id;
+
+            return null;
         }
     }
 }

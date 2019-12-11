@@ -1,24 +1,20 @@
-﻿using Codartis.SoftVis.Diagramming;
+﻿using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.SoftVis.Modeling.Definition.Events;
-using Codartis.Util;
+using JetBrains.Annotations;
 
 namespace Codartis.SoftVis.Services.Plugins
 {
     /// <summary>
     /// Listens to model events and corrects the diagram accordingly.
     /// </summary>
-    public class ModelTrackingDiagramPlugin : ConnectorManipulatorDiagramPluginBase
+    public sealed class ModelTrackingDiagramPlugin : ConnectorManipulatorDiagramPluginBase
     {
-        public ModelTrackingDiagramPlugin(IDiagramShapeFactory diagramShapeFactory)
-            : base(diagramShapeFactory)
+        public ModelTrackingDiagramPlugin(
+            [NotNull] IModelService modelService,
+            [NotNull] IDiagramService diagramService)
+            : base(modelService, diagramService)
         {
-        }
-
-        public override void Initialize(IModelService modelService, IDiagramService diagramService)
-        {
-            base.Initialize(modelService, diagramService);
-
             ModelService.ModelChanged += OnModelChanged;
         }
 
@@ -27,40 +23,31 @@ namespace Codartis.SoftVis.Services.Plugins
             ModelService.ModelChanged -= OnModelChanged;
         }
 
-        private void OnModelChanged(ModelEventBase modelEvent)
+        private void OnModelChanged(ModelEvent modelEvent)
         {
-            var diagram = DiagramService.Diagram;
+            DiagramService.UpdateModel(modelEvent.NewModel);
 
-            switch (modelEvent)
+            foreach (var itemChange in modelEvent.ItemEvents)
+                ProcessModelItemEvent(itemChange);
+        }
+
+        private void ProcessModelItemEvent(ModelItemEventBase modelItemEvent)
+        {
+            switch (modelItemEvent)
             {
-                case ModelNodeUpdatedEvent modelNodeUpdatedEvent:
-                    var newModelNode = modelNodeUpdatedEvent.NewNode;
-                    diagram
-                        .TryGetNode(newModelNode.Id)
-                        .Match(node => DiagramService.UpdateDiagramNodeModelNode(node, newModelNode));
-                    break;
-
                 case ModelNodeRemovedEvent modelNodeRemovedEvent:
-                    var removedModelNode = modelNodeRemovedEvent.RemovedNode;
-                    diagram
-                        .TryGetNode(removedModelNode.Id)
-                        .Match(node => DiagramService.RemoveNode(node.Id));
+                    var removedNode = modelNodeRemovedEvent.RemovedNode;
+                    DiagramService.RemoveNode(removedNode.Id);
                     break;
 
                 case ModelRelationshipAddedEvent modelRelationshipAddedEvent:
                     var addedRelationship = modelRelationshipAddedEvent.AddedRelationship;
-                    ShowModelRelationshipIfBothEndsAreVisible(addedRelationship, diagram);
+                    ShowModelRelationshipIfBothEndsAreVisible(addedRelationship, DiagramService.LatestDiagram);
                     break;
 
                 case ModelRelationshipRemovedEvent modelRelationshipRemovedEvent:
                     var modelRelationship = modelRelationshipRemovedEvent.RemovedRelationship;
-                    diagram
-                        .TryGetConnector(modelRelationship.Id)
-                        .Match(connector => DiagramService.RemoveConnector(connector.Id));
-                    break;
-
-                case ModelClearedEvent _:
-                    DiagramService.ClearDiagram();
+                    DiagramService.RemoveConnector(modelRelationship.Id);
                     break;
             }
         }

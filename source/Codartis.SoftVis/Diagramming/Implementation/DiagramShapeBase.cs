@@ -1,4 +1,5 @@
-﻿using Codartis.SoftVis.Geometry;
+﻿using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Geometry;
 
 namespace Codartis.SoftVis.Diagramming.Implementation
 {
@@ -8,7 +9,7 @@ namespace Codartis.SoftVis.Diagramming.Implementation
     /// </summary>
     public abstract class DiagramShapeBase : IDiagramShape
     {
-        public abstract bool IsRectDefined { get; }
+        public abstract string ShapeId { get; }
         public abstract Rect2D Rect { get; }
     }
 }

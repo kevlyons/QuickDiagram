@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using JetBrains.Annotations;
 
 namespace Codartis.Util
 {
@@ -7,14 +8,16 @@ namespace Codartis.Util
     {
         public static readonly Maybe<T> Nothing = default;
 
+        public bool HasValue { get; }
         private readonly T _value;
 
-        internal Maybe(T value)
+        internal Maybe([NotNull] T value)
         {
-            _value = value;
             HasValue = true;
+            _value = value;
         }
 
+        [NotNull]
         public T Value
         {
             get
@@ -26,13 +29,21 @@ namespace Codartis.Util
             }
         }
 
-        public bool HasValue { get; }
-
         public override string ToString() => !HasValue ? "<Nothing>" : Value.ToString();
 
         public static implicit operator Maybe<T>(Maybe<Maybe<T>> doubleMaybe) => doubleMaybe.HasValue ? doubleMaybe.Value : Nothing;
 
-        public bool Equals(Maybe<T> other) => EqualityComparer<T>.Default.Equals(_value, other._value) && HasValue.Equals(other.HasValue);
+        public bool Equals(Maybe<T> other)
+        {
+            return !HasValue && !other.HasValue ||
+                   HasValue && other.HasValue && EqualityComparer<T>.Default.Equals(_value, other._value);
+        }
+
+        public bool Equals(T otherValue)
+        {
+            return !HasValue && otherValue == null ||
+                   HasValue && otherValue != null && EqualityComparer<T>.Default.Equals(_value, otherValue);
+        }
 
         public override bool Equals(object obj)
         {
@@ -53,6 +64,11 @@ namespace Codartis.Util
         public static bool operator ==(Maybe<T> left, Maybe<T> right) => left.Equals(right);
 
         public static bool operator !=(Maybe<T> left, Maybe<T> right) => !left.Equals(right);
+
+        public Maybe<TResult> OfType<TResult>()
+        {
+            return Value is TResult result ? new Maybe<TResult>(result) : Maybe<TResult>.Nothing;
+        }
     }
 
     public static class Maybe

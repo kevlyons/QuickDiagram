@@ -1,8 +1,8 @@
 ﻿using System.Linq;
 using System.Windows;
 using System.Windows.Media;
-using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
+using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
 using Codartis.SoftVis.Modeling.Definition;
 
 namespace Codartis.SoftVis.UI.Wpf.ViewModel
@@ -17,11 +17,11 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         private Point[] _routePoints;
 
-        public DiagramNodeViewModelBase SourceNodeViewModel { get; }
-        public DiagramNodeViewModelBase TargetNodeViewModel { get; }
+        public DiagramNodeViewModel SourceNodeViewModel { get; }
+        public DiagramNodeViewModel TargetNodeViewModel { get; }
 
         public DiagramConnectorViewModel(IModelService modelService, IDiagramService diagramService, 
-            IDiagramConnector diagramConnector, DiagramNodeViewModelBase sourceNodeViewModel, DiagramNodeViewModelBase targetNodeViewModel)
+            IDiagramConnector diagramConnector, DiagramNodeViewModel sourceNodeViewModel, DiagramNodeViewModel targetNodeViewModel)
             : base(modelService, diagramService, diagramConnector)
         {
             _routePoints = diagramConnector.Route.ToWpf();
@@ -32,6 +32,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             DiagramService.DiagramChanged += OnDiagramChanged;
         }
 
+        public override string Stereotype => DiagramConnector.ModelRelationship.Stereotype.Name;
 
         public override void Dispose()
         {
@@ -42,7 +43,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         public IDiagramConnector DiagramConnector => (IDiagramConnector) DiagramShape;
 
-        public override object Clone() 
+        public override object CloneForImageExport() 
             => new DiagramConnectorViewModel(ModelService, DiagramService, DiagramConnector, SourceNodeViewModel, TargetNodeViewModel);
 
         private ConnectorType ConnectorType => DiagramConnector.ConnectorType;
@@ -64,10 +65,16 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             }
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent @event)
         {
-            if (diagramEvent is DiagramConnectorRouteChangedEvent diagramConnectorRouteChangedEvent
-                && DiagramConnectorIdEqualityComparer.Instance.Equals(diagramConnectorRouteChangedEvent.NewConnector, DiagramConnector))
+            foreach (var change in @event.ShapeEvents)
+                ProcessDiagramChange(change);
+        }
+
+        private void ProcessDiagramChange(DiagramShapeEventBase diagramShapeEvent)
+        {
+            if (diagramShapeEvent is DiagramConnectorRouteChangedEvent diagramConnectorRouteChangedEvent &&
+                DiagramConnectorIdEqualityComparer.Instance.Equals(diagramConnectorRouteChangedEvent.NewConnector, DiagramConnector))
             {
                 DiagramShape = diagramConnectorRouteChangedEvent.NewConnector;
                 RoutePoints = diagramConnectorRouteChangedEvent.NewConnector.Route.ToWpf();

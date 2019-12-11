@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using Codartis.SoftVis.Diagramming;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Modeling.Definition;
 
 namespace Codartis.SoftVis.UI.Wpf.ViewModel
@@ -11,14 +11,18 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
     {
         public IDiagramShape DiagramShape { get; protected set; }
 
-        protected DiagramShapeViewModelBase(IModelService modelService, IDiagramService diagramService,
+        protected DiagramShapeViewModelBase(
+            IModelService modelService,
+            IDiagramService diagramService,
             IDiagramShape diagramShape)
-            :base(modelService, diagramService)
+            : base(modelService, diagramService)
         {
             DiagramShape = diagramShape;
         }
 
-        public abstract object Clone();
+        public abstract string Stereotype { get; }
+
+        public abstract object CloneForImageExport();
 
         public virtual IEnumerable<IMiniButton> CreateMiniButtons()
         {

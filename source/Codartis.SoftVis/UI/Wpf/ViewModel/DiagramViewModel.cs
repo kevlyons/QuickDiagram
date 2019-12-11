@@ -3,8 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
-using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Geometry;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.Util.UI.Wpf.Commands;
@@ -31,17 +30,28 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         public event ShowModelItemsEventHandler ShowModelItemsRequested;
         public event Action<IDiagramNode, Size2D> DiagramNodeSizeChanged;
+        public event Action<IDiagramNode, Size2D> DiagramNodePayloadAreaSizeChanged;
         public event Action<IDiagramNode> DiagramNodeInvoked;
         public event Action<IDiagramNode> RemoveDiagramNodeRequested;
 
-        public DiagramViewModel(IModelService modelService, IDiagramService diagramService,
-            IDiagramShapeUiFactory diagramShapeUiFactory, double minZoom, double maxZoom, double initialZoom)
+        public DiagramViewModel(
+            IModelService modelService,
+            IDiagramService diagramService,
+            IDiagramShapeUiFactory diagramShapeUiFactory,
+            double minZoom,
+            double maxZoom,
+            double initialZoom)
             : base(modelService, diagramService)
         {
             DiagramShapeUiFactory = diagramShapeUiFactory;
 
-            DiagramViewportViewModel = new DiagramViewportViewModel(ModelService, DiagramService, diagramShapeUiFactory,
-                minZoom, maxZoom, initialZoom);
+            DiagramViewportViewModel = new DiagramViewportViewModel(
+                ModelService,
+                DiagramService,
+                diagramShapeUiFactory,
+                minZoom,
+                maxZoom,
+                initialZoom);
 
             RelatedNodeListBoxViewModel = new RelatedNodeListBoxViewModel(ModelService, DiagramService);
             RelatedNodeListBoxViewModel.ItemSelected += OnRelatedNodeSelected;
@@ -56,7 +66,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
             SubscribeToViewportEvents();
 
-            _lastDiagram = DiagramService.Diagram;
+            _lastDiagram = DiagramService.LatestDiagram;
         }
 
         public override void Dispose()
@@ -74,7 +84,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             DiagramViewportViewModel.Dispose();
         }
 
-        public IEnumerable<DiagramNodeViewModelBase> DiagramNodeViewModels => DiagramViewportViewModel.DiagramNodeViewModels;
+        public IEnumerable<DiagramNodeViewModel> DiagramNodeViewModels => DiagramViewportViewModel.DiagramNodeViewModels;
         public IEnumerable<DiagramConnectorViewModel> DiagramConnectorViewModelsModels => DiagramViewportViewModel.DiagramConnectorViewModels;
 
         public Rect DiagramContentRect
@@ -87,14 +97,14 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             }
         }
 
-        public void FollowDiagramNodes(IReadOnlyList<IDiagramNode> diagramNodes)
+        public void FollowDiagramNodes(IReadOnlyList<ModelNodeId> nodeIds)
         {
-            var autoMoveMode = _lastDiagram.Nodes.Count > diagramNodes.Count
+            var autoMoveMode = _lastDiagram.Nodes.Count > nodeIds.Count
                 ? ViewportAutoMoveMode.Contain
                 : ViewportAutoMoveMode.Center;
 
             DiagramViewportViewModel.SetFollowDiagramNodesMode(autoMoveMode);
-            DiagramViewportViewModel.FollowDiagramNodes(diagramNodes);
+            DiagramViewportViewModel.FollowDiagramNodes(nodeIds);
         }
 
         public void StopFollowingDiagramNodes()
@@ -105,7 +115,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
         public void KeepDiagramCentered()
         {
             DiagramViewportViewModel.SetFollowDiagramNodesMode(ViewportAutoMoveMode.Center);
-            DiagramViewportViewModel.FollowDiagramNodes(_lastDiagram.Nodes);
+            DiagramViewportViewModel.FollowDiagramNodes(_lastDiagram.Nodes.Select(i => i.Id).ToArray());
         }
 
         public void ZoomToContent() => DiagramViewportViewModel.ZoomToContent();
@@ -128,6 +138,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             DiagramViewportViewModel.RemoveDiagramNodeRequested += OnRemoveDiagramNodeRequested;
             DiagramViewportViewModel.DiagramNodeInvoked += OnDiagramNodeInvoked;
             DiagramViewportViewModel.DiagramNodeSizeChanged += OnDiagramNodeSizeChanged;
+            DiagramViewportViewModel.DiagramNodePayloadAreaSizeChanged += OnDiagramNodePayloadAreaSizeChanged;
         }
 
         private void UnsubscribeFromViewportEvents()
@@ -138,6 +149,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             DiagramViewportViewModel.RemoveDiagramNodeRequested -= OnRemoveDiagramNodeRequested;
             DiagramViewportViewModel.DiagramNodeInvoked -= OnDiagramNodeInvoked;
             DiagramViewportViewModel.DiagramNodeSizeChanged -= OnDiagramNodeSizeChanged;
+            DiagramViewportViewModel.DiagramNodePayloadAreaSizeChanged -= OnDiagramNodePayloadAreaSizeChanged;
         }
 
         private void OnDiagramNodeSizeChanged(IDiagramNode diagramNode, Size2D newSize)
@@ -146,7 +158,13 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
                 DiagramNodeSizeChanged?.Invoke(diagramNode, newSize);
         }
 
-        private void OnRemoveDiagramNodeRequested(DiagramNodeViewModelBase diagramNodeViewModel)
+        private void OnDiagramNodePayloadAreaSizeChanged(IDiagramNode diagramNode, Size2D newSize)
+        {
+            if (newSize.IsDefined)
+                DiagramNodePayloadAreaSizeChanged?.Invoke(diagramNode, newSize);
+        }
+
+        private void OnRemoveDiagramNodeRequested(DiagramNodeViewModel diagramNodeViewModel)
         {
             DiagramViewportViewModel.StopFollowingDiagramNodes();
             if (RelatedNodeListBoxViewModel.OwnerDiagramShape == diagramNodeViewModel)
@@ -233,17 +251,17 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         private void UpdateDiagramContentRect(IDiagram diagram)
         {
-            DiagramContentRect = diagram.RootLayoutGroup.Rect.ToWpf();
+            DiagramContentRect = diagram.Rect.ToWpf();
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent @event)
         {
-            _lastDiagram = diagramEvent.NewDiagram;
+            _lastDiagram = @event.NewDiagram;
 
-            if (diagramEvent is DiagramClearedEvent)
+            if (_lastDiagram.IsEmpty)
                 HideAllWidgets();
 
-            UpdateDiagramContentRect(diagramEvent.NewDiagram);
+            UpdateDiagramContentRect(@event.NewDiagram);
         }
     }
 }

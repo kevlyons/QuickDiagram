@@ -1,12 +1,14 @@
-﻿using Codartis.SoftVis.Modeling.Definition;
+﻿using JetBrains.Annotations;
 
 namespace Codartis.SoftVis.TestHostApp.Modeling
 {
-    internal class InterfaceNode : TypeNode
+    internal sealed class InterfaceNode : TypeNodeBase
     {
-        public InterfaceNode(ModelNodeId id, string name, ModelOrigin origin, bool isAbstract)
-            : base(id, name, ModelNodeStereotypes.Interface, origin, isAbstract)
+        public InterfaceNode([NotNull] string name)
+            : base(name)
         {
         }
+
+        public override string StereotypeName => "interface";
     }
 }

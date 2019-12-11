@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
-using Codartis.SoftVis.Diagramming;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.SoftVis.Services;
 using Codartis.SoftVis.TestHostApp.Modeling;
@@ -46,10 +47,11 @@ namespace Codartis.SoftVis.TestHostApp
         {
             SelectedDpi = 300;
 
-            _testModelService = (ITestModelService) visualizationService.GetModelService();
-            var diagramId = visualizationService.CreateDiagram(minZoom: 0.2, maxZoom: 5, initialZoom: 1);
+            var modelService = visualizationService.GetModelService();
+            _testModelService = new TestModelService(modelService);
+            var diagramId = visualizationService.CreateDiagram();
             _diagramService = visualizationService.GetDiagramService(diagramId);
-            _uiService = (IWpfUiService) visualizationService.GetUiService(diagramId);
+            _uiService = (IWpfUiService)visualizationService.GetUiService(diagramId);
 
             _uiService.DiagramNodeInvoked += i => Debug.WriteLine($"DiagramNodeInvoked: {i}");
             _uiService.ShowModelItemsRequested += OnShowModelItemsRequested;
@@ -83,10 +85,10 @@ namespace Codartis.SoftVis.TestHostApp
 
         private void OnShowModelItemsRequested(IReadOnlyList<IModelNode> modelNodes, bool followNewDiagramNodes)
         {
-            var diagramNodes = _diagramService.ShowModelNodes(modelNodes);
+            _diagramService.AddNodes(modelNodes.Select(i => i.Id));
 
             if (followNewDiagramNodes)
-                _uiService.FollowDiagramNodes(diagramNodes);
+                _uiService.FollowDiagramNodes(modelNodes.Select(i => i.Id).ToArray());
         }
 
         private void AddShapes()
@@ -96,8 +98,7 @@ namespace Codartis.SoftVis.TestHostApp
 
             var modelNodes = _testModelService.ItemGroups[_modelItemGroupIndex];
 
-            foreach (var modelNode in modelNodes)
-                _diagramService.ShowModelNode(modelNode);
+            _diagramService.AddNodes(modelNodes.Select(i => i.Id));
 
             _modelItemGroupIndex++;
 
@@ -114,7 +115,7 @@ namespace Codartis.SoftVis.TestHostApp
             var modelNodes = _testModelService.ItemGroups[_nextToRemoveModelItemGroupIndex];
 
             foreach (var modelNode in modelNodes)
-                _diagramService.HideModelNode(modelNode.Id);
+                _diagramService.RemoveNode(modelNode.Id);
 
             _nextToRemoveModelItemGroupIndex++;
 
@@ -123,7 +124,7 @@ namespace Codartis.SoftVis.TestHostApp
 
         private void ZoomToContent()
         {
-            var timer = new DispatcherTimer {Interval = TimeSpan.FromMilliseconds(500)};
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
             timer.Tick += (s, o) =>
             {
                 timer.Stop();
@@ -140,8 +141,12 @@ namespace Codartis.SoftVis.TestHostApp
                 {
                     await progressDialog.ShowWithDelayAsync();
 
-                    var bitmapSource = await _uiService.CreateDiagramImageAsync(SelectedDpi, 10,
-                        progressDialog.CancellationToken, progressDialog.Progress, progressDialog.MaxProgress);
+                    var bitmapSource = await _uiService.CreateDiagramImageAsync(
+                        SelectedDpi,
+                        10,
+                        progressDialog.CancellationToken,
+                        progressDialog.Progress,
+                        progressDialog.MaxProgress);
 
                     progressDialog.Reset("Copying image to clipboard...", showProgressNumber: false);
 

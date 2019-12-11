@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
-using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
+using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.Util.UI;
 using Codartis.Util.UI.Wpf;
@@ -35,9 +35,9 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             DiagramService.DiagramChanged -= OnDiagramChanged;
         }
 
-        public void FollowDiagramNodes(IEnumerable<IDiagramNode> diagramNodes, TransitionSpeed transitionSpeed)
+        public void FollowDiagramNodes(IEnumerable<ModelNodeId> nodeIds, TransitionSpeed transitionSpeed)
         {
-            _followedNodeIds = diagramNodes?.Select(i => i.Id).ToArray();
+            _followedNodeIds = nodeIds?.ToArray();
             _followNodesTransitionSpeed = transitionSpeed;
             MoveViewport();
         }
@@ -71,27 +71,25 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             base.ZoomWithCenterTo(newLinearZoom, zoomCenterInScreenSpace, transitionSpeed);
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent diagramEvent)
         {
-            EnsureUiThread(() => DispatchDiagramEvent(diagramEvent));
+            foreach (var change in diagramEvent.ShapeEvents)
+                EnsureUiThread(() => DispatchDiagramEvent(change));
         }
 
-        private void DispatchDiagramEvent(DiagramEventBase diagramEvent)
+        private void DispatchDiagramEvent(DiagramShapeEventBase diagramShapeEvent)
         {
-            switch (diagramEvent)
+            switch (diagramShapeEvent)
             {
-                case DiagramNodeSizeChangedEvent diagramNodeSizeChangedEvent:
-                    FollowDiagramNode(diagramNodeSizeChangedEvent.NewNode);
-                    break;
-                case DiagramNodePositionChangedEvent diagramNodePositionChangedEvent:
-                    FollowDiagramNode(diagramNodePositionChangedEvent.NewNode);
+                case DiagramNodeChangedEvent @event when @event.ChangedMember == DiagramNodeMember.Position:
+                    FollowDiagramNode(@event.OldNode.Id);
                     break;
             }
         }
 
-        private void FollowDiagramNode(IDiagramNode diagramNode)
+        private void FollowDiagramNode(ModelNodeId nodeId)
         {
-            if (_followedNodeIds != null && _followedNodeIds.Contains(diagramNode.Id))
+            if (_followedNodeIds?.Contains(nodeId) == true)
                 MoveViewport();
         }
 
@@ -100,7 +98,7 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             if (_followedNodeIds == null)
                 return;
 
-            var rect = DiagramService.GetRect(_followedNodeIds).ToWpf();
+            var rect = DiagramService.LatestDiagram.GetRect(_followedNodeIds).ToWpf();
             if (rect.IsUndefined())
                 return;
 

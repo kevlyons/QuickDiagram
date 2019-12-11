@@ -4,16 +4,25 @@ using JetBrains.Annotations;
 namespace Codartis.SoftVis.Modeling.Definition
 {
     /// <summary>
-    /// Represents a named item in the model, e.g. a package, a type, a member.
+    /// Represents a named item in the model.
     /// Immutable.
     /// </summary>
     public interface IModelNode : IImmutableVertex<ModelNodeId>
     {
-        string Name { get; }
+        [NotNull] string Name { get; }
         ModelNodeStereotype Stereotype { get; }
-        ModelOrigin Origin { get; }
+
+        /// <summary>
+        /// An arbitrary extra object associated with this model node.
+        /// Must be immutable.
+        /// </summary>
+        [CanBeNull]
+        object Payload { get; }
 
         [NotNull]
         IModelNode WithName([NotNull] string newName);
+
+        [NotNull]
+        IModelNode WithPayload([CanBeNull] object newPayload);
     }
 }

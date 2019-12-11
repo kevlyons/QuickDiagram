@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
-using Codartis.SoftVis.Diagramming;
-using Codartis.SoftVis.Diagramming.Events;
+using Codartis.SoftVis.Diagramming.Definition;
+using Codartis.SoftVis.Diagramming.Definition.Events;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.SoftVis.Modeling.Definition.Events;
 using Codartis.Util.UI.Wpf.ViewModels;
@@ -59,15 +59,27 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             base.Hide();
         }
 
-        private void OnModelChanged(ModelEventBase modelEvent)
+        private void OnModelChanged(ModelEvent modelEvent)
+        {
+            foreach (var itemChange in modelEvent.ItemEvents)
+                ProcessModelItemEvent(itemChange);
+        }
+
+        private void ProcessModelItemEvent(ModelItemEventBase modelEvent)
         {
             if (modelEvent is ModelNodeRemovedEvent modelNodeRemovedEvent)
                 RemoveModelNode(modelNodeRemovedEvent.RemovedNode.Id);
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent @event)
         {
-            if (diagramEvent is DiagramNodeAddedEvent diagramNodeAddedEvent)
+            foreach (var diagramChange in @event.ShapeEvents)
+                ProcessDiagramChange(diagramChange);
+        }
+
+        private void ProcessDiagramChange(DiagramShapeEventBase diagramShapeEvent)
+        {
+            if (diagramShapeEvent is DiagramNodeAddedEvent diagramNodeAddedEvent)
                 RemoveModelNode(diagramNodeAddedEvent.NewNode.Id);
         }
 

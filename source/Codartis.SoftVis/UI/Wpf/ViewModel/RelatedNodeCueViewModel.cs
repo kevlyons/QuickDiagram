@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
-using Codartis.SoftVis.Diagramming;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Modeling.Definition;
 
 namespace Codartis.SoftVis.UI.Wpf.ViewModel
@@ -23,8 +23,8 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
             _diagramNode = diagramNode;
             _directedModelRelationshipType = relatedNodeType.RelationshipType;
 
-            _lastModel = modelService.Model;
-            _lastDiagram = diagramService.Diagram;
+            _lastModel = modelService.LatestModel;
+            _lastDiagram = diagramService.LatestDiagram;
 
             ModelService.ModelChanged += OnModelChanged;
             DiagramService.DiagramChanged += OnDiagramChanged;
@@ -42,15 +42,15 @@ namespace Codartis.SoftVis.UI.Wpf.ViewModel
 
         public override object PlacementKey => _directedModelRelationshipType;
         
-        private void OnModelChanged(ModelEventBase modelEvent)
+        private void OnModelChanged(ModelEvent modelEvent)
         {
             _lastModel = modelEvent.NewModel;
             UpdateVisibility();
         }
 
-        private void OnDiagramChanged(DiagramEventBase diagramEvent)
+        private void OnDiagramChanged(DiagramEvent @event)
         {
-            _lastDiagram = diagramEvent.NewDiagram;
+            _lastDiagram = @event.NewDiagram;
             UpdateVisibility();
         }
 

@@ -4,8 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
-using Codartis.SoftVis.Diagramming;
+using Codartis.SoftVis.Diagramming.Definition;
 using Codartis.SoftVis.Geometry;
+using Codartis.SoftVis.Modeling.Definition;
 using Codartis.SoftVis.UI.Wpf.View;
 using Codartis.SoftVis.UI.Wpf.ViewModel;
 using Codartis.Util;
@@ -22,9 +23,15 @@ namespace Codartis.SoftVis.UI.Wpf
 
         public DiagramViewModel DiagramViewModel { get; }
 
-        public WpfUiService(DiagramViewModel diagramViewModel)
+        public WpfUiService(
+            IModelService modelService,
+            IDiagramService diagramService,
+            IDiagramShapeUiFactory diagramShapeUiFactory,
+            double minZoom,
+            double maxZoom,
+            double initialZoom)
         {
-            DiagramViewModel = diagramViewModel;
+            DiagramViewModel = new DiagramViewModel(modelService, diagramService, diagramShapeUiFactory, minZoom, maxZoom, initialZoom);
         }
 
         public void Initialize(ResourceDictionary resourceDictionary, IDiagramStyleProvider diagramStyleProvider)
@@ -33,17 +40,22 @@ namespace Codartis.SoftVis.UI.Wpf
             _diagramStyleProvider = diagramStyleProvider;
         }
 
-        public async Task<BitmapSource> CreateDiagramImageAsync(double dpi, double margin,
+        public async Task<BitmapSource> CreateDiagramImageAsync(
+            double dpi,
+            double margin,
             CancellationToken cancellationToken = default,
-            IIncrementalProgress progress = null, IProgress<int> maxProgress = null)
+            IIncrementalProgress progress = null,
+            IProgress<int> maxProgress = null)
         {
             try
             {
                 // The image creator must be created on the UI thread so it can read the necessary view and view model data.
                 var diagramImageCreator = new DataCloningDiagramImageCreator(DiagramViewModel, _diagramStyleProvider, _resourceDictionary);
 
-                return await Task.Factory.StartSTA(() =>
-                    diagramImageCreator.CreateImage(dpi, margin, cancellationToken, progress, maxProgress), cancellationToken);
+                return await Task.Factory.StartSTA(
+                    () =>
+                        diagramImageCreator.CreateImage(dpi, margin, cancellationToken, progress, maxProgress),
+                    cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -52,8 +64,8 @@ namespace Codartis.SoftVis.UI.Wpf
         }
 
         public void ZoomToDiagram() => DiagramViewModel.ZoomToContent();
-        public void FollowDiagramNode(IDiagramNode diagramNode) => DiagramViewModel.FollowDiagramNodes(new [] {diagramNode});
-        public void FollowDiagramNodes(IReadOnlyList<IDiagramNode> diagramNodes) => DiagramViewModel.FollowDiagramNodes(diagramNodes);
+        public void FollowDiagramNode(ModelNodeId nodeId) => DiagramViewModel.FollowDiagramNodes(new[] { nodeId });
+        public void FollowDiagramNodes(IReadOnlyList<ModelNodeId> nodeIds) => DiagramViewModel.FollowDiagramNodes(nodeIds);
         public void KeepDiagramCentered() => DiagramViewModel.KeepDiagramCentered();
 
         public event ShowModelItemsEventHandler ShowModelItemsRequested
@@ -66,6 +78,12 @@ namespace Codartis.SoftVis.UI.Wpf
         {
             add => DiagramViewModel.DiagramNodeSizeChanged += value;
             remove => DiagramViewModel.DiagramNodeSizeChanged -= value;
+        }
+
+        public event Action<IDiagramNode, Size2D> DiagramNodePayloadAreaSizeChanged
+        {
+            add => DiagramViewModel.DiagramNodePayloadAreaSizeChanged += value;
+            remove => DiagramViewModel.DiagramNodePayloadAreaSizeChanged -= value;
         }
 
         public event Action<IDiagramNode> DiagramNodeInvoked

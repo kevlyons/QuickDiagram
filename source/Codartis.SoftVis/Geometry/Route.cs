@@ -22,11 +22,6 @@ namespace Codartis.SoftVis.Geometry
 
         private readonly ImmutableList<Point2D> _routePoints;
 
-        public Route(params Point2D[] routePoints)
-            : this(routePoints as IEnumerable<Point2D>)
-        {
-        }
-
         public Route(IEnumerable<Point2D> routePoints = null)
         {
             var normalizedRoutePoints = Normalize(routePoints).ToImmutableList();
@@ -36,19 +31,26 @@ namespace Codartis.SoftVis.Geometry
                 : null;
         }
 
+        public Route(params Point2D[] routePoints)
+            : this(routePoints as IEnumerable<Point2D>)
+        {
+        }
+
         public IEnumerator<Point2D> GetEnumerator() => _routePoints?.GetEnumerator() ?? Enumerable.Empty<Point2D>().GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         public bool IsDefined => _routePoints?.Any() == true;
 
-        public Route AddPoint(Point2D point) => AddPoints(point.ToEnumerable());
+        public Route AddPoint(Point2D point) => Add(point.ToEnumerable());
 
-        public Route AddPoints(IEnumerable<Point2D> points)
+        public Route Add(IEnumerable<Point2D> points)
         {
             return points == null
                 ? this
                 : new Route(_routePoints?.Concat(points) ?? points);
         }
+
+        public Route Translate(Point2D vector) => new Route(_routePoints?.Select(i => i + vector));
 
         /// <summary>
         /// Modifies the first and last point of a route to attach to the supplied source and target rect's perimeter.

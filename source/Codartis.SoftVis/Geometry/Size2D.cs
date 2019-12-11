@@ -37,6 +37,11 @@ namespace Codartis.SoftVis.Geometry
         public static Size2D operator *(Size2D size, double factor) => new Size2D(size.Width * factor, size.Height * factor);
         public static Size2D operator /(Size2D size, double factor) => new Size2D(size.Width / factor, size.Height / factor);
 
+        public static Size2D StackVertically(Size2D size1, Size2D size2)
+        {
+            return new Size2D(Math.Max(size1.Width, size2.Width), size1.Height + size2.Height);
+        }
+
         public static bool Equals(Size2D size1, Size2D size2)
         {
             return size1.IsUndefined && size2.IsUndefined || size1.IsEqualWithTolerance(size2);
@@ -71,6 +76,9 @@ namespace Codartis.SoftVis.Geometry
             return !left.Equals(right);
         }
 
+        public static implicit operator Size2D((double width, double height) tuple) => new Size2D(tuple.width, tuple.height);
+        public static implicit operator (double width, double height)(Size2D size) => (size.Width, size.Height);
+
         public bool IsEqualWithTolerance(Size2D otherSize)
         {
             return Width.IsEqualWithTolerance(otherSize.Width) && Height.IsEqualWithTolerance(otherSize.Height);
@@ -80,5 +88,7 @@ namespace Codartis.SoftVis.Geometry
         {
             return $"({Width:0.##}x{Height:0.##})";
         }
+
+        public Size2D WithMargin(double margin) => new Size2D(Width + 2 * margin, Height + 2 * margin);
     }
 }

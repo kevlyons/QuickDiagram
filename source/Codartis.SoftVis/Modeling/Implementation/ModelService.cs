@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using Codartis.SoftVis.Modeling.Definition;
 using Codartis.SoftVis.Modeling.Definition.Events;
@@ -12,123 +11,70 @@ namespace Codartis.SoftVis.Modeling.Implementation
     /// </summary>
     /// <remarks>
     /// Mutators must not run concurrently. A lock ensures it.
-    /// Descendants must implement their mutators using the same lock object.
+    /// Events are raised after the lock was released to avoid potential deadlocks.
     /// </remarks>
-    public class ModelService : IModelService
+    public sealed class ModelService : IModelService
     {
-        public IModel Model { get; protected set; }
+        public IModel LatestModel { get; private set; }
 
-        [NotNull] protected readonly object ModelUpdateLockObject;
+        [NotNull] private readonly object _modelUpdateLockObject;
 
-        public event Action<ModelEventBase> ModelChanged;
+        public event Action<ModelEvent> ModelChanged;
 
-        public ModelService()
+        public ModelService([NotNull] params IModelRuleProvider[] modelRuleProviders)
         {
-            Model = Implementation.Model.Empty;
-            ModelUpdateLockObject = new object();
+            LatestModel = Model.Create(modelRuleProviders);
+            _modelUpdateLockObject = new object();
         }
 
-        public void AddNode(IModelNode node, ModelNodeId? parentNodeId = null) => RaiseEvents(AddNodeCore(node, parentNodeId));
-        public void UpdateNode(IModelNode newNode) => RaiseEvents(UpdateNodeCore(newNode));
-        public void RemoveNode(ModelNodeId nodeId) => RaiseEvents(RemoveNodeCore(nodeId));
-        public void AddRelationship(IModelRelationship relationship) => RaiseEvents(AddRelationshipCore(relationship));
-        public void RemoveRelationship(ModelRelationshipId relationshipId) => RaiseEvents(RemoveRelationshipCore(relationshipId));
-        public void ClearModel() => RaiseEvents(ClearModelCore());
-
-        protected void RaiseEvents([NotNull] [ItemNotNull] IEnumerable<ModelEventBase> events)
+        public IModelNode AddNode(
+            string name,
+            ModelNodeStereotype stereotype,
+            object payload = null,
+            ModelNodeId? parentNodeId = null)
         {
-            // It is important to materialize the collection with ToList() to allow releasing ModelUpdateLockObject as soon as possible.
-            foreach (var @event in events.ToList())
-                ModelChanged?.Invoke(@event);
+            var modelEvent = MutateWithLockThenRaiseEvents(() => LatestModel.AddNode(name, stereotype, payload, parentNodeId));
+            return modelEvent.ItemEvents.OfType<ModelNodeAddedEvent>().First().AddedNode;
         }
 
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> AddNodeCore([NotNull] IModelNode node, ModelNodeId? parentNodeId = null)
+        public void RemoveNode(ModelNodeId nodeId)
         {
-            lock (ModelUpdateLockObject)
+            MutateWithLockThenRaiseEvents(() => LatestModel.RemoveNode(nodeId));
+        }
+
+        public IModelRelationship AddRelationship(
+            ModelNodeId sourceId,
+            ModelNodeId targetId,
+            ModelRelationshipStereotype stereotype,
+            object payload = null)
+        {
+            var modelEvent = MutateWithLockThenRaiseEvents(() => LatestModel.AddRelationship(sourceId, targetId, stereotype, payload));
+            return modelEvent.ItemEvents.OfType<ModelRelationshipAddedEvent>().First().AddedRelationship;
+        }
+
+        public void RemoveRelationship(ModelRelationshipId relationshipId)
+        {
+            MutateWithLockThenRaiseEvents(() => LatestModel.RemoveRelationship(relationshipId));
+        }
+
+        public void ClearModel()
+        {
+            MutateWithLockThenRaiseEvents(() => LatestModel.Clear());
+        }
+
+        private ModelEvent MutateWithLockThenRaiseEvents([NotNull] Func<ModelEvent> modelMutatorFunc)
+        {
+            ModelEvent modelEvent;
+
+            lock (_modelUpdateLockObject)
             {
-                Model = Model.AddNode(node);
-                yield return new ModelNodeAddedEvent(Model, node);
-
-                if (!parentNodeId.HasValue)
-                    yield break;
-
-                var containsRelationship = CreateContainsRelationship(parentNodeId.Value, node.Id);
-
-                foreach (var @event in AddRelationshipCore(containsRelationship))
-                    yield return @event;
+                modelEvent = modelMutatorFunc.Invoke();
+                LatestModel = modelEvent.NewModel;
             }
-        }
 
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> UpdateNodeCore([NotNull] IModelNode newNode)
-        {
-            lock (ModelUpdateLockObject)
-            {
-                var maybeOldNode = Model.TryGetNode(newNode.Id);
-                if (!maybeOldNode.HasValue)
-                    throw new InvalidOperationException($"Node with id {newNode.Id} was not found in the model.");
+            ModelChanged?.Invoke(modelEvent);
 
-                Model = Model.ReplaceNode(newNode);
-                yield return new ModelNodeUpdatedEvent(Model, maybeOldNode.Value, newNode);
-            }
-        }
-
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> RemoveNodeCore(ModelNodeId nodeId)
-        {
-            lock (ModelUpdateLockObject)
-            {
-                foreach (var @event in Model.GetRelationships(nodeId).SelectMany(i => RemoveRelationshipCore(i.Id)))
-                    yield return @event;
-
-                var oldNode = Model.GetNode(nodeId);
-                Model = Model.RemoveNode(nodeId);
-                yield return new ModelNodeRemovedEvent(Model, oldNode);
-            }
-        }
-
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> AddRelationshipCore([NotNull] IModelRelationship relationship)
-        {
-            lock (ModelUpdateLockObject)
-            {
-                Model = Model.AddRelationship(relationship);
-                yield return new ModelRelationshipAddedEvent(Model, relationship);
-            }
-        }
-
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> RemoveRelationshipCore(ModelRelationshipId relationshipId)
-        {
-            lock (ModelUpdateLockObject)
-            {
-                var oldRelationship = Model.GetRelationship(relationshipId);
-                Model = Model.RemoveRelationship(relationshipId);
-                yield return new ModelRelationshipRemovedEvent(Model, oldRelationship);
-            }
-        }
-
-        [NotNull]
-        [ItemNotNull]
-        private IEnumerable<ModelEventBase> ClearModelCore()
-        {
-            lock (ModelUpdateLockObject)
-            {
-                Model = Model.Clear();
-                yield return new ModelClearedEvent(Model);
-            }
-        }
-
-        [NotNull]
-        private static ModelRelationship CreateContainsRelationship(ModelNodeId source, ModelNodeId target)
-        {
-            return new ModelRelationship(ModelRelationshipId.Create(), source, target, ModelRelationshipStereotype.Containment);
+            return modelEvent;
         }
     }
 }
